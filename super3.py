@@ -111,7 +111,7 @@ def remove_file_safe(path: str):
 
 async def download_small_media_via_telethon(aiogram_message: Message):
     msg_id = aiogram_message.message_id
-    log.info(f"[DOWNLOAD] Проверка размера для сообщения id={msg_id}")
+    log.info(f"[DOWNLOAD] Проверка медиа для сообщения id={msg_id}")
 
     try:
         chat_entity = await tg_client.get_entity(TG_CHAT_ID)
@@ -120,37 +120,57 @@ async def download_small_media_via_telethon(aiogram_message: Message):
         if not telethon_msgs or len(telethon_msgs) == 0:
             return None
 
-        t_msg: TelethonMessage = telethon_msgs[0]
+        t_msg = telethon_msgs[0]
         path = None
+        media = None
+        size_mb = 0.0
+        ext = ""
 
-        # Работаем и с фото, и с видео
-        media = t_msg.photo or t_msg.video
-        
-        if media:
-            size_mb = media.size / (1024 * 1024)
-            
-            # Теперь скачиваем, если файл <= 100 МБ (вместо старых 18 МБ)
-            if size_mb <= DOWNLOAD_SAFE_LIMIT_MB:
-                ext = ".jpg" if t_msg.photo else ".mp4"
-                path = os.path.join(TMP_DIR, f"{media.id}{ext}")
-                log.info(f"[DOWNLOAD] Скачивание файла ({size_mb:.1f} МБ)...")
-                await tg_client.download_media(media, file=path)
-                
-                # Проверка, что файл реально скачался и не пустой
-                if path and os.path.exists(path) and os.path.getsize(path) > 0:
-                    return path
-                else:
-                    log.warning("[DOWNLOAD] Файл скачался пустым или не сохранился.")
-                    return None
-            else:
-                # Если файл больше 100 МБ — не пытаемся качать, чтобы не забивать диск
-                log.warning(f"[SKIP] Файл слишком большой для скачивания ({size_mb:.1f} МБ > {DOWNLOAD_SAFE_LIMIT_MB} МБ).")
-                return None
+        # Определяем тип медиа и получаем размер
+        if t_msg.photo:
+            photo = t_msg.photo
+            # У Photo нет .size, есть .sizes — берём самый большой размер
+            largest_size = max(photo.sizes, key=lambda s: s.w * s.h)
+            size_mb = largest_size.size / (1024 * 1024)
+            ext = ".jpg"
+            media = photo
+        elif t_msg.video:
+            video = t_msg.video
+            # У Video есть .size
+            size_mb = video.size / (1024 * 1024)
+            ext = ".mp4"
+            media = video
         else:
             return None
 
+        log.info(f"[SIZE] Размер медиа: {size_mb:.2f} МБ")
+
+        # Проверка лимита скачивания
+        if size_mb > DOWNLOAD_SAFE_LIMIT_MB:
+            log.warning(
+                f"[SKIP] Файл слишком большой для скачивания ({size_mb:.1f} МБ > {DOWNLOAD_SAFE_LIMIT_MB} МБ). "
+                "Скачивание отменено, будет отправлена только подпись."
+            )
+            return None
+
+        # Скачивание
+        path = os.path.join(TMP_DIR, f"{media.id}{ext}")
+        log.info(f"[DOWNLOAD] Скачивание файла ({size_mb:.1f} МБ) в {path}...")
+        await tg_client.download_media(media, file=path)
+
+        # Финальная проверка: файл существует и не пустой
+        if path and os.path.exists(path) and os.path.getsize(path) > 0:
+            final_size = os.path.getsize(path) / (1024 * 1024)
+            log.info(f"[OK] Файл успешно скачан: {final_size:.2f} МБ.")
+            return path
+        else:
+            log.warning("[SKIP] Файл не скачался или оказался пустым.")
+            if os.path.exists(path):
+                os.remove(path)
+            return None
+
     except Exception as e:
-        log.exception(f"[ERROR] Ошибка при скачивании: {e}")
+        log.exception(f"[ERROR] Ошибка при скачивании медиа: {e}")
         return None
 
 
