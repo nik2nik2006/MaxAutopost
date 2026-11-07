@@ -48,7 +48,7 @@ DOWNLOAD_SAFE_LIMIT_MB = 100
 MAX_ATTACHMENT_LIMIT_MB = 95
 
 logging.basicConfig(
-    filename='app.log',
+    # filename='app.log',
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)-15s | %(message)s"
 )
