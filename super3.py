@@ -35,7 +35,11 @@ TG_API_HASH = os.getenv("TG_API_HASH")  # api_hash для Telethon
 
 MAX_TEXT_LIMIT = 3900
 TMP_DIR = "tmp_media"
-DOWNLOAD_SAFE_LIMIT_MB = 18 
+# Увеличили лимит скачивания: теперь бот будет пытаться качать файлы до 100 МБ
+DOWNLOAD_SAFE_LIMIT_MB = 100 
+
+# Лимит отправки оставляем жёстким (это ограничение самого MAX, его нельзя обойти кодом)
+MAX_ATTACHMENT_LIMIT_MB = 95
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,34 +123,74 @@ async def download_small_media_via_telethon(aiogram_message: Message):
         t_msg: TelethonMessage = telethon_msgs[0]
         path = None
 
-        if t_msg.photo:
-            photo = t_msg.photo
-            size_mb = photo.size / (1024 * 1024)
+        # Работаем и с фото, и с видео
+        media = t_msg.photo or t_msg.video
+        
+        if media:
+            size_mb = media.size / (1024 * 1024)
+            
+            # Теперь скачиваем, если файл <= 100 МБ (вместо старых 18 МБ)
             if size_mb <= DOWNLOAD_SAFE_LIMIT_MB:
-                path = os.path.join(TMP_DIR, f"{photo.id}.jpg")
-                log.info(f"[DOWNLOAD] Скачивание фото ({size_mb:.1f} МБ)...")
-                await tg_client.download_media(photo, file=path)
-        elif t_msg.video:
-            video = t_msg.video
-            size_mb = video.size / (1024 * 1024)
-            if size_mb <= DOWNLOAD_SAFE_LIMIT_MB:
-                path = os.path.join(TMP_DIR, f"{video.id}.mp4")
-                log.info(f"[DOWNLOAD] Скачивание видео ({size_mb:.1f} МБ)...")
-                await tg_client.download_media(video, file=path)
+                ext = ".jpg" if t_msg.photo else ".mp4"
+                path = os.path.join(TMP_DIR, f"{media.id}{ext}")
+                log.info(f"[DOWNLOAD] Скачивание файла ({size_mb:.1f} МБ)...")
+                await tg_client.download_media(media, file=path)
+                
+                # Проверка, что файл реально скачался и не пустой
+                if path and os.path.exists(path) and os.path.getsize(path) > 0:
+                    return path
+                else:
+                    log.warning("[DOWNLOAD] Файл скачался пустым или не сохранился.")
+                    return None
             else:
-                log.warning(f"[SKIP] Видео слишком большое ({size_mb:.1f} МБ). Отправляем только подпись.")
+                # Если файл больше 100 МБ — не пытаемся качать, чтобы не забивать диск
+                log.warning(f"[SKIP] Файл слишком большой для скачивания ({size_mb:.1f} МБ > {DOWNLOAD_SAFE_LIMIT_MB} МБ).")
                 return None
         else:
             return None
-
-        if path and os.path.exists(path) and os.path.getsize(path) > 0:
-            return path
-        return None
 
     except Exception as e:
         log.exception(f"[ERROR] Ошибка при скачивании: {e}")
         return None
 
+
+async def send_to_max(text: str, media_path: str | None = None):
+    global mx
+
+    if mx is None:
+        log.error("[SEND ERROR] MaxBot ещё не инициализирован!")
+        return
+
+    parts = chunk(text)
+    for i, part in enumerate(parts):
+        attachments = None
+
+        # Проверка: файл существует и его размер <= лимиту отправки MAX
+        if media_path and os.path.exists(media_path):
+            size_mb = os.path.getsize(media_path) / (1024 * 1024)
+
+            if size_mb > MAX_ATTACHMENT_LIMIT_MB:
+                log.warning(
+                    f"[SKIP ATTACH] Файл ({size_mb:.1f} МБ) превышает лимит отправки MAX "
+                    f"({MAX_ATTACHMENT_LIMIT_MB} МБ). Отправляем только текст."
+                )
+                attachments = None  # Не прикрепляем файл, отправляем только текст
+            else:
+                attachments = [InputMedia(media_path)]
+
+        try:
+            await mx.send_message(
+                chat_id=MAX_CHAT_ID,
+                text=part,
+                format=Format.HTML,
+                attachments=attachments,
+            )
+            log.info(f"[SEND] Часть {i+1}/{len(parts)} успешно отправлена в MAX.")
+        except Exception as e:
+            log.error(f"[SEND ERROR] Ошибка отправки в MAX: {e}")
+
+        if i < len(parts) - 1:
+            await asyncio.sleep(0.6)
 
 @dp.message(F.chat.id == TG_CHAT_ID, F.text)
 async def on_text(message: Message):

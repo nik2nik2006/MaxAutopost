@@ -153,4 +153,5 @@ media/
 # исключил файл сессий и логирования
 app.log
 session_name.session
-.session
+*.session
+session.session
