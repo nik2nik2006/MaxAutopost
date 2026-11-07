@@ -35,8 +35,8 @@ TG_CHAT_ID = int(os.getenv("TG_CHANNEL_ID", 0))
 
 # ── Настройки ─────────────────────────────────────────────
 # api_id для Telethon (my.telegram.org)
-api_id = TG_API_ID = os.getenv("TG_API_ID")
-api_hash = TG_API_HASH = os.getenv("TG_API_HASH")  # api_hash для Telethon
+TG_API_ID = os.getenv("TG_API_ID")
+TG_API_HASH = os.getenv("TG_API_HASH")  # api_hash для Telethon
 
 MAX_TEXT_LIMIT = 3900
 TMP_DIR = "tmp_media"
