@@ -129,14 +129,15 @@ async def download_small_media_via_telethon(aiogram_message: Message):
         # Определяем тип медиа и получаем размер
         if t_msg.photo:
             photo = t_msg.photo
-            # У Photo нет .size, есть .sizes — берём самый большой размер
-            largest_size = max(photo.sizes, key=lambda s: s.w * s.h)
+            # ИСПРАВЛЕНИЕ: берём размер с максимальным .size (в байтах)
+            # Это безопасно для PhotoSize, PhotoStrippedSize и других типов
+            largest_size = max(photo.sizes, key=lambda s: s.size)
             size_mb = largest_size.size / (1024 * 1024)
             ext = ".jpg"
             media = photo
         elif t_msg.video:
             video = t_msg.video
-            # У Video есть .size
+            # У Video атрибут .size есть всегда
             size_mb = video.size / (1024 * 1024)
             ext = ".mp4"
             media = video
@@ -172,6 +173,7 @@ async def download_small_media_via_telethon(aiogram_message: Message):
     except Exception as e:
         log.exception(f"[ERROR] Ошибка при скачивании медиа: {e}")
         return None
+
 
 
 async def send_to_max(text: str, media_path: str | None = None):
