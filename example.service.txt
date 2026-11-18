@@ -1,0 +1,15 @@
+[Unit]
+Description=Telegram Bot_Super
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/MaxAutopost/
+ExecStart=/root/MaxAutopost/venv/bin/python3 super3.py
+Restart=always
+StandardOutput=append:/var/log/bot.log
+StandardError=append:/var/log/bot.log
+
+[Install]
+WantedBy=multi-user.target
